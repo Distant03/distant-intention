@@ -129,7 +129,6 @@ loading: () => `<div class="spinner" aria-label="Loading"></div>`,
 
 welcome: () => ORBS() + `<div class="stack"><p class="eyebrow">Distant Intention Study</p>
   <h1>Group <em>Telepathy Event</em></h1>
-  <p class="subhead">Every Sunday · 7:30pm UK time</p>
   <p class="lede">Every Sunday at 7:30pm (UK time), everyone taking part is split at random into two groups. Senders concentrate on one picture for two minutes. Receivers try to feel it, then sketch what comes to them. Can a group of minds send an image?</p></div>
   ${pendingJoin() ? `<div class="notice">You've been invited to link with someone. Sign up first, and you'll be able to accept.</div>` : ""}
   <button class="btn warm" data-go="email">Get started</button>
@@ -282,7 +281,7 @@ function fmtLeft(ms) {
 const clock = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
 
 function eventCard() {
-  const H = S.home; if (!H || !H.next) return `<h2>Group <em>Telepathy Event</em></h2><p class="subhead">Every Sunday · 7:30pm UK time</p>`;
+  const H = S.home; if (!H || !H.next) return `<h2>Group <em>Telepathy Event</em></h2>`;
   const n = H.next, start = new Date(n.starts_at).getTime(), t = (nowMs() - start) / 1000;
   const title = n.kind === "test" ? "Test <em>event</em>" : "Group <em>Telepathy Event</em>";
   let body;
@@ -294,7 +293,7 @@ function eventCard() {
     <p class="small muted">The lobby opens 15 minutes before, at ${fmtTime(new Date(start - 900000).toISOString())}. You'll need about 10 minutes, a quiet place, and a blank sheet of paper and a pen.</p>
     <div class="grid2"><button class="btn ghost" data-act="calendar">Add to calendar</button><button class="btn ghost" data-act="shareevent">Invite friends</button></div>`;
   const last = H.last ? `<button class="item" style="width:100%;text-align:left;color:inherit" data-act="golive" data-ev="${esc(H.last.id)}"><span class="dot" style="background:var(--cool)"></span><span class="meta"><b>Your last event</b><div>${esc(fmtWhen(H.last.starts_at))}</div></span><span class="pill ok">Results</span></button>` : "";
-  return `<div class="panel stack event-card"><div><h2>${title}</h2><p class="subhead">${n.kind === "test" ? "Test run" : "Every Sunday · 7:30pm UK time"}</p></div><p class="small muted">Next: ${esc(fmtWhen(n.starts_at))}</p>${body}</div>${last}`;
+  return `<div class="panel stack event-card"><div><h2>${title}</h2>${n.kind === "test" ? `<p class="subhead">Test run</p>` : ""}</div><p class="small muted">Next: ${esc(fmtWhen(n.starts_at))}</p>${body}</div>${last}`;
 }
 
 function downloadIcs() {
