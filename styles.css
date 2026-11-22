@@ -153,3 +153,19 @@ body{margin:0}
 .copyline{display:flex;gap:8px;align-items:center}
 .copyline input{font-family:var(--f-mono);font-size:.8rem}
 .copyline .btn{width:auto;padding:12px 14px;font-size:.9rem}
+
+/* Sunday event */
+.event-card{border-color:rgba(244,177,131,.35);background:linear-gradient(160deg,#252a52,var(--panel))}
+.cd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:12px 14px;border-radius:12px;background:var(--deep);border:1px solid var(--line)}
+.cd .k{font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;color:var(--mist);font-weight:600}
+.cd .v{font-size:1.5rem;font-weight:600}
+.grid2 .btn{padding:13px 10px;font-size:.95rem}
+.role{text-align:center;padding:10px 0 0}
+.role b{display:block;font-family:var(--f-display);font-weight:400;font-size:3rem;line-height:1.05}
+.role.warm b{color:var(--warm)} .role.cool b{color:var(--cool)}
+.rest b{font-size:2.2rem} .rest span{display:block;padding:0 24px}
+.rest.tune{background:radial-gradient(circle at 40% 35%,#2b4a86,#17204a);box-shadow:0 0 60px rgba(147,182,255,.25),inset 0 0 0 1px rgba(147,182,255,.3)}
+figure.target{margin:0;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:var(--deep)}
+figure.target img{display:block;width:100%;height:auto;max-height:62vh;object-fit:contain;background:#fff}
+.pad{width:100%;aspect-ratio:3/4;max-height:58vh;border-radius:16px;background:#fff;touch-action:none;display:block}
+button.item{font:inherit;cursor:pointer}

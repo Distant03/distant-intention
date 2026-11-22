@@ -1,4 +1,4 @@
-// Distant Intention Study · app (step 2: sign-up, questionnaire, invites and links)
+// Distant Intention Study · app (step 3: the Sunday Telepathy Event)
 const cfg = window.DI_CONFIG || {};
 const $app = document.getElementById("app");
 
@@ -128,8 +128,8 @@ const V = {
 loading: () => `<div class="spinner" aria-label="Loading"></div>`,
 
 welcome: () => ORBS() + `<div class="stack"><p class="eyebrow">Distant Intention Study</p>
-  <h1>Can they feel you <em>thinking of them?</em></h1>
-  <p class="lede">A study of the connection between minds. You'll be paired with someone, usually a stranger and sometimes someone close to you, and try to send or receive a picture.</p></div>
+  <h1>The Sunday <em>Telepathy Event</em></h1>
+  <p class="lede">Every Sunday at 7:30pm (UK time), everyone taking part is split at random into two groups. Senders concentrate on one picture for two minutes. Receivers try to feel it, then sketch what comes to them. Can a group of minds send an image?</p></div>
   ${pendingJoin() ? `<div class="notice">You've been invited to link with someone. Sign up first, and you'll be able to accept.</div>` : ""}
   <button class="btn warm" data-go="email">Get started</button>
   <button class="link" data-go="email">I already have an account</button>`,
@@ -212,12 +212,8 @@ home: () => { const c = S.conns, needs = c.filter(x => x.needs_my_answer);
     return `<div class="item"><span class="dot" style="background:var(--warm)"></span><span class="meta"><b>${name}</b><div>${esc(relLabel(x.relationship))} · waiting for them to confirm</div></span><span class="pill wait">Pending</span></div>`;
   };
   return `<div class="bar"><p class="eyebrow">Distant Intention Study</p><button class="link" data-go="settings" style="align-self:auto">Settings</button></div>
-  <h2>Ready when <em>you are</em></h2>
+  ${eventCard()}
   ${needs.length ? `<div class="notice">${needs.length === 1 ? "Someone you invited has" : needs.length + " people you invited have"} joined. Confirm below.</div>` : ""}
-  <div class="panel stack"><p class="eyebrow">Play</p>
-  <p class="muted">5 rounds · about 5 minutes. If you both enjoy it, you can play again together at the end.</p>
-  <button class="btn warm" disabled>Play</button>
-  <p class="small faint">The picture test arrives in the next update. Thanks for signing up early!</p></div>
   <div class="stack"><p class="eyebrow">Your people</p>
   <div class="list">${c.length ? c.map(row).join("") : `<div class="empty">Invite a twin, relative or friend. The app will sometimes match you together, without telling you when.</div>`}</div>
   <button class="btn ghost" data-go="invitehome">Invite someone</button>
@@ -249,16 +245,333 @@ confirm: () => { const c = S.confirm; return back("home") + `<h2>Confirm your <e
 settings: () => back("home") + `<h2>Settings</h2>
   <div class="panel stack"><div class="settings-row"><span class="small muted">Signed in as</span><span class="small">${esc(S.user?.email)}</span></div>
   <button class="btn ghost" data-act="signout">Sign out</button></div>
+  ${S.home && S.home.admin ? `<div class="panel stack"><p class="eyebrow">Admin</p><p class="small muted">Start a test event so you can try the whole thing. Anyone signed in will see it on their home screen.</p>
+  <button class="btn ghost" data-act="testevent">Start a test event in 2 minutes</button></div>` : ""}
   <div class="panel stack"><p class="eyebrow">Leave the study</p>
   <p class="small muted">This permanently deletes your account, your answers and your links. It can't be undone.</p>
   ${S.delStep ? `<p class="small" style="color:var(--alert)">Are you sure? Everything will be deleted.</p><button class="btn ghost danger" data-act="delete">Yes, delete everything</button><button class="btn ghost" data-act="canceldelete">Keep my account</button>`
     : `<button class="btn ghost danger" data-act="askdelete">Delete my account and data</button>`}</div>`
 };
 
-function render() { $app.innerHTML = (V[S.screen] || V.home)(); }
+// =====================================================================
+// The Sunday Telepathy Event
+// Timing in seconds after the start: 0–120 send / tune in, 120–300 sketch,
+// 300–420 photograph the sketch, 420 reveal. Leaving the app 0–300 = not counted.
+// =====================================================================
+const T = { lobby: -900, sendEnd: 120, sketchEnd: 300, photoEnd: 420 };
+const L = { id: null, es: null, timer: null, poll: null, phase: null, draw: false, photo: null, photoUrl: null,
+  hiddenAt: null, reported: false, wake: null, sketchUrl: null, hashOk: null, busy: false };
+let clockOffset = 0;                                  // server time minus this device's time, in ms
+const nowMs = () => Date.now() + clockOffset;
+const syncClock = iso => { if (iso) clockOffset = new Date(iso).getTime() - Date.now(); };
+
+async function loadHome() {
+  const { data, error } = await sb.rpc("home_events");
+  if (error) throw error; S.home = data; syncClock(data.server_now);
+}
+
+const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
+const fmtTime = iso => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function fmtLeft(ms) {
+  const s = Math.max(0, Math.round(ms / 1000)), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  if (d) return `${d} day${d > 1 ? "s" : ""} ${h} hr`;
+  if (h) return `${h} hr ${m} min`;
+  return `${m}:${String(x).padStart(2, "0")}`;
+}
+const clock = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
+
+function eventCard() {
+  const H = S.home; if (!H || !H.next) return `<h2>The Sunday <em>Telepathy Event</em></h2>`;
+  const n = H.next, start = new Date(n.starts_at).getTime(), t = (nowMs() - start) / 1000;
+  const title = n.kind === "test" ? "Test <em>event</em>" : "Sunday <em>Telepathy Event</em>";
+  let body;
+  if (n.checked_in && t < T.photoEnd) body = `<p class="muted">You're checked in. Keep the app open.</p><button class="btn warm" data-act="golive" data-ev="${esc(n.id)}">Go to the event</button>`;
+  else if (t >= T.lobby && t < 0) body = `<div class="cd"><span class="k">Starts in</span><span class="v mono" data-cd="${start}">${fmtLeft(start - nowMs())}</span></div>
+    <p class="muted">The lobby is open. Have a <b style="color:var(--moon)">blank sheet of paper and a pen</b> ready.</p><button class="btn warm" data-go="pledge">Join now</button>`;
+  else if (t >= 0) body = `<p class="muted">This event has started. The next one is on Sunday at 7:30pm.</p>`;
+  else body = `<div class="cd"><span class="k">Starts in</span><span class="v mono" data-cd="${start}">${fmtLeft(start - nowMs())}</span></div>
+    <p class="small muted">The lobby opens 15 minutes before, at ${fmtTime(new Date(start - 900000).toISOString())}. You'll need about 10 minutes, a quiet place, and a blank sheet of paper and a pen.</p>
+    <div class="grid2"><button class="btn ghost" data-act="calendar">Add to calendar</button><button class="btn ghost" data-act="shareevent">Invite friends</button></div>`;
+  const last = H.last ? `<button class="item" style="width:100%;text-align:left;color:inherit" data-act="golive" data-ev="${esc(H.last.id)}"><span class="dot" style="background:var(--cool)"></span><span class="meta"><b>Your last event</b><div>${esc(fmtWhen(H.last.starts_at))}</div></span><span class="pill ok">Results</span></button>` : "";
+  return `<div class="panel stack event-card"><p class="eyebrow" style="color:var(--warm)">${n.kind === "test" ? "Test" : "Every Sunday · 7:30pm UK"}</p>
+    <h2>${title}</h2><p class="small muted">${esc(fmtWhen(n.starts_at))}</p>${body}</div>${last}`;
+}
+
+function downloadIcs() {
+  const H = S.home; if (!H || !H.next) return;
+  const d = new Date(H.next.starts_at), p = x => String(x).padStart(2, "0");
+  const z = x => `${x.getUTCFullYear()}${p(x.getUTCMonth() + 1)}${p(x.getUTCDate())}T${p(x.getUTCHours())}${p(x.getUTCMinutes())}00Z`;
+  const local = d.toLocaleString("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).split("/").reverse().join("");
+  const end = new Date(d.getTime() + 10 * 60000);
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Distant Intention//Sunday Event//EN",
+    "BEGIN:VTIMEZONE", "TZID:Europe/London",
+    "BEGIN:DAYLIGHT", "TZOFFSETFROM:+0000", "TZOFFSETTO:+0100", "TZNAME:BST", "DTSTART:19700329T010000", "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU", "END:DAYLIGHT",
+    "BEGIN:STANDARD", "TZOFFSETFROM:+0100", "TZOFFSETTO:+0000", "TZNAME:GMT", "DTSTART:19701025T020000", "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU", "END:STANDARD",
+    "END:VTIMEZONE",
+    "BEGIN:VEVENT", "UID:sunday-telepathy-event@distant-intention", `DTSTAMP:${z(new Date())}`,
+    `DTSTART;TZID=Europe/London:${local}T193000`, `DTEND;TZID=Europe/London:${local}T194000`, "RRULE:FREQ=WEEKLY;BYDAY=SU",
+    "SUMMARY:Sunday Telepathy Event", `DESCRIPTION:Open the app by 7:30pm. Have a blank sheet of paper and a pen ready. ${location.origin + location.pathname}`,
+    `URL:${location.origin + location.pathname}`,
+    "BEGIN:VALARM", "TRIGGER:-PT15M", "ACTION:DISPLAY", "DESCRIPTION:The Telepathy Event lobby is open", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  void end;
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+  a.download = "sunday-telepathy-event.ics"; document.body.appendChild(a); a.click(); a.remove();
+}
+async function shareEvent() {
+  const url = location.origin + location.pathname, text = "Join me for the Sunday Telepathy Event: every Sunday at 7:30pm UK time, a live experiment in sending and receiving an image. Free to take part:";
+  if (navigator.share) { try { await navigator.share({ title: "Sunday Telepathy Event", text, url }); } catch (_) {} return; }
+  try { await navigator.clipboard.writeText(text + " " + url); toast("Link copied"); } catch (_) { toast(url); }
+}
+
+// Home screen countdown; redraws when the lobby opens or the event starts.
+let homeStage = null;
+setInterval(() => {
+  if (S.screen !== "home" || !S.home || !S.home.next) return;
+  const t = (nowMs() - new Date(S.home.next.starts_at).getTime()) / 1000;
+  const stage = t < T.lobby ? 0 : t < 0 ? 1 : 2;
+  if (homeStage !== null && stage !== homeStage) { homeStage = stage; return go("home"); }
+  homeStage = stage;
+  document.querySelectorAll("[data-cd]").forEach(el => { el.textContent = fmtLeft(Number(el.dataset.cd) - nowMs()); });
+}, 1000);
+
+// ---------- the live event ----------
+async function openLive(id) {
+  stopLive();
+  Object.assign(L, { id, es: null, phase: null, draw: false, photo: null, photoUrl: null, hiddenAt: null, reported: false, sketchUrl: null, hashOk: null, busy: false });
+  S.screen = "live"; render(); window.scrollTo(0, 0);
+  await refreshLive();
+  L.timer = setInterval(tickLive, 250);
+}
+function stopLive() {
+  clearInterval(L.timer); L.timer = null; clearTimeout(L.poll); L.poll = null; releaseWake();
+}
+async function refreshLive() {
+  clearTimeout(L.poll); L.poll = null;
+  try {
+    const { data, error } = await sb.rpc("event_state", { p_event: L.id });
+    if (error) throw error;
+    syncClock(data.server_now); L.es = data;
+    if (data.reveal && L.hashOk === null) checkHash(data);
+    if (data.me && data.me.sketch_path && !L.sketchUrl) {
+      const r = await sb.storage.from("sketches").createSignedUrl(data.me.sketch_path, 3600);
+      if (r.data) L.sketchUrl = r.data.signedUrl;
+    }
+  } catch (e) { if (S.screen === "live" && !L.es) showError(friendly(e)); }
+  if (S.screen !== "live") return;
+  if (!(L.draw && livePhase() === "receiver:sketch")) L.phase = null;  // don't wipe a drawing in progress
+  tickLive();
+  // when to ask again
+  const es = L.es; if (!es) { L.poll = setTimeout(refreshLive, 3000); return; }
+  const t = (nowMs() - new Date(es.starts_at).getTime()) / 1000;
+  let wait = null;
+  if (t < -20) wait = 10000; else if (t < 0) wait = Math.max(300, -t * 1000 + 300);
+  else if (es.me && !es.me.role) wait = 1500;
+  else if (t < T.sketchEnd && es.me && es.me.role === "receiver" && es.me.sketch_at) wait = (T.sketchEnd - t) * 1000 + 500;
+  else if (t < T.photoEnd) wait = Math.min(15000, (T.photoEnd - t) * 1000 + 500);
+  else if (!es.reveal) wait = 3000;
+  if (wait !== null) L.poll = setTimeout(refreshLive, wait);
+}
+async function checkHash(es) {
+  try {
+    const r = es.reveal, buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${r.image_id}:${r.path}:${r.salt}`));
+    L.hashOk = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("") === es.commit_hash;
+  } catch (_) { L.hashOk = false; }
+}
+function livePhase() {
+  const es = L.es; if (!es) return "loading";
+  const t = (nowMs() - new Date(es.starts_at).getTime()) / 1000, me = es.me;
+  if (!me) return t >= T.photoEnd ? "done" : "notin";
+  if (t < 0) return "lobby";
+  if (!me.role) return "splitting";
+  if (t < T.sendEnd) return me.role + ":send";
+  if (t < T.sketchEnd) return me.role === "receiver" && me.sketch_at ? "receiver:sent" : me.role + ":sketch";
+  if (t < T.photoEnd) return me.role === "receiver" ? (me.sketch_at ? "receiver:sent" : "receiver:photo") : "sender:wait";
+  return "done";
+}
+function tickLive() {
+  if (S.screen !== "live" || !L.es) return;
+  const ph = livePhase(), t = (nowMs() - new Date(L.es.starts_at).getTime()) / 1000;
+  if (ph !== L.phase) {
+    const prev = L.phase; L.phase = ph; render();
+    if (/:send$|lobby|splitting|:sketch$/.test(ph)) holdWake(); else if (ph === "done") releaseWake();
+    if (prev && ph !== prev && navigator.vibrate) { try { navigator.vibrate(120); } catch (_) {} }
+  }
+  // update clocks without redrawing the page
+  document.querySelectorAll("[data-until]").forEach(el => { el.textContent = clock(Number(el.dataset.until) - t); });
+  document.querySelectorAll("[data-bar]").forEach(el => { const [a, b] = el.dataset.bar.split(",").map(Number); el.style.width = Math.min(100, Math.max(0, (t - a) / (b - a) * 100)) + "%"; });
+}
+
+// Keep the screen awake during the event, so the phone doesn't lock (which would count as leaving the app).
+async function holdWake() { try { if (!L.wake && "wakeLock" in navigator) { L.wake = await navigator.wakeLock.request("screen"); L.wake.addEventListener("release", () => { L.wake = null; }); } } catch (_) {} }
+function releaseWake() { try { L.wake && L.wake.release(); } catch (_) {} L.wake = null; }
+
+// Leaving the app between 7:30 and 7:35 means this person's part doesn't count.
+async function reportLeft() {
+  if (L.reported || !L.id) return;
+  try { const { error } = await sb.rpc("report_left", { p_event: L.id }); if (!error) L.reported = true; } catch (_) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (S.screen !== "live" || !L.es || !L.es.me) return;
+  const t = (nowMs() - new Date(L.es.starts_at).getTime()) / 1000;
+  if (document.visibilityState === "hidden") {
+    if (t >= 0 && t < T.sketchEnd) { L.hiddenAt = t; reportLeft(); }
+  } else {
+    if (L.hiddenAt !== null) reportLeft();
+    holdWake(); refreshLive();
+  }
+});
+
+// ---------- sketching ----------
+// The camera input lives outside the screen, so it survives the page redrawing while the camera is open.
+let camInput = null;
+function photoInput() {
+  if (camInput) { camInput.value = ""; return camInput; }
+  camInput = document.createElement("input"); camInput.type = "file"; camInput.accept = "image/*";
+  camInput.setAttribute("capture", "environment"); camInput.hidden = true; document.body.appendChild(camInput);
+  camInput.addEventListener("change", () => {
+    const f = camInput.files && camInput.files[0]; if (!f) return;
+    L.photo = f; if (L.photoUrl) URL.revokeObjectURL(L.photoUrl); L.photoUrl = URL.createObjectURL(f);
+    if (S.screen === "live") render();
+  });
+  return camInput;
+}
+let pad = null;
+function padInit() {
+  const c = document.getElementById("pad"); if (!c || c === (pad && pad.c)) return;
+  const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+  const g = c.getContext("2d"); g.scale(dpr, dpr); g.fillStyle = "#fff"; g.fillRect(0, 0, r.width, r.height);
+  g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = "#111"; g.lineWidth = 3;
+  pad = { c, g, down: false, used: false, w: r.width, h: r.height };
+  const pos = e => { const b = c.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  c.addEventListener("pointerdown", e => { e.preventDefault(); c.setPointerCapture(e.pointerId); pad.down = true; pad.used = true; const [x, y] = pos(e); g.beginPath(); g.moveTo(x, y); g.lineTo(x + .1, y + .1); g.stroke(); });
+  c.addEventListener("pointermove", e => { if (!pad.down) return; const [x, y] = pos(e); g.lineTo(x, y); g.stroke(); });
+  const up = () => { pad.down = false; };
+  c.addEventListener("pointerup", up); c.addEventListener("pointercancel", up);
+}
+function padClear() { if (!pad) return; pad.g.fillStyle = "#fff"; pad.g.fillRect(0, 0, pad.w, pad.h); pad.used = false; }
+
+async function shrink(blobOrFile) {
+  // resize to at most 1600px and save as JPEG, so uploads are quick
+  const bmp = await createImageBitmap(blobOrFile);
+  const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height)), w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, w, h); g.drawImage(bmp, 0, 0, w, h);
+  return await new Promise(res => c.toBlob(res, "image/jpeg", 0.85));
+}
+async function upload(blob, method, btn) {
+  if (L.busy) return; L.busy = true; setBusy(btn, true, "Sending…");
+  try {
+    const path = `${S.user.id}/${L.id}-${Date.now()}.jpg`;
+    const up = await sb.storage.from("sketches").upload(path, blob, { contentType: "image/jpeg", upsert: false });
+    if (up.error) throw up.error;
+    const { error } = await sb.rpc("submit_sketch", { p_event: L.id, p_path: path, p_method: method });
+    if (error) throw error;
+    L.sketchUrl = URL.createObjectURL(blob); toast("Sketch received");
+    await refreshLive();
+  } catch (e) { setBusy(btn, false); showError(friendly(e)); }
+  finally { L.busy = false; }
+}
+async function sendDrawing(btn) {
+  if (!pad || !pad.used) return showError("Draw something first, even a few lines.");
+  const blob = await new Promise(res => pad.c.toBlob(res, "image/jpeg", 0.9));
+  return upload(blob, "screen", btn);
+}
+async function sendPhoto(btn) {
+  if (!L.photo) return showError("Take a photo of your sketch first.");
+  let blob; try { blob = await shrink(L.photo); } catch (_) { blob = L.photo; }
+  return upload(blob, "paper", btn);
+}
+
+// ---------- screens ----------
+const timerBlock = (from, to, cls) => `<div class="stack" style="gap:6px"><div class="bar"><span class="small muted">Time left</span><span class="timer" data-until="${to}">${clock(to - from)}</span></div>
+  <div class="timerline ${cls || ""}"><i data-bar="${from},${to}" style="width:0"></i></div></div>`;
+const imgTag = (im, cls) => im ? `<figure class="target ${cls || ""}"><img src="${esc(im.path)}" alt="${esc(im.title)}"></figure>` : "";
+const LEAVE_NOTE = `<p class="small faint">Stay in the app until 7:35. If you leave it, your part won't count this week.</p>`;
+
+Object.assign(V, {
+pledge: () => back("home") + `<p class="eyebrow">Before you join</p><h2>Ready to <em>take part?</em></h2>
+  <div class="panel stack small muted">
+  <p><b style="color:var(--moon)">1. Get ready.</b> Somewhere quiet, on your own, with a <b style="color:var(--moon)">blank sheet of paper and a pen</b>. Turn notifications off.</p>
+  <p><b style="color:var(--moon)">2. At 7:30</b> you'll be told if you're a <span style="color:var(--warm)">sender</span> or a <span style="color:var(--cool)">receiver</span>. Senders concentrate on a picture for 2 minutes. Receivers relax and try to feel it, then sketch for 3 minutes.</p>
+  <p><b style="color:var(--moon)">3. At 7:35</b> receivers take a photo of their sketch in the app. The picture is revealed to everyone at 7:37.</p>
+  <p><b style="color:var(--moon)">Stay in the app until 7:35.</b> If you leave it, even briefly, your part won't count this week.</p></div>
+  <button class="check${S.pledged ? " sel" : ""}" data-act="pledge"><span class="box">${S.pledged ? "✓" : ""}</span><span>I agree not to communicate with anyone, or use social media or any other app, until the picture is revealed, and I agree not to cheat.</span></button>
+  <button class="btn warm" data-act="checkin" ${S.pledged ? "" : "disabled"}>I'm here</button>`,
+
+live: () => {
+  const es = L.es, ph = livePhase(); if (!es) return `<div class="spinner" aria-label="Loading"></div>`;
+  const start = new Date(es.starts_at).getTime(), t = (nowMs() - start) / 1000, me = es.me || {};
+  const top = `<div class="bar"><button class="link" data-go="home">← Home</button><span class="eyebrow">${es.kind === "test" ? "Test event" : "Sunday Telepathy Event"}</span></div>`;
+  switch (ph) {
+  case "notin": return top + `<h2>This event has <em>started</em></h2><p class="muted">Check-in closed at ${fmtTime(es.starts_at)}. See you next Sunday!</p>`;
+  case "lobby": return top + `<div class="rest"><div><span class="small muted">Starting in</span><b class="mono" data-until="0">${clock(-t)}</b></div></div>
+    <h2>You're <em>in</em></h2>
+    <p class="muted"><b style="color:var(--moon)">${es.n_checked_in}</b> ${es.n_checked_in === 1 ? "person is" : "people are"} here. At ${fmtTime(es.starts_at)} everyone will be split at random into senders and receivers.</p>
+    <div class="panel small muted stack"><p>Have your blank paper and pen ready. Take a few slow breaths.</p><p>Keep this screen open: it will change by itself.</p></div>`;
+  case "splitting": return top + ORBS("search") + `<h2>Splitting everyone into <em>two groups…</em></h2>`;
+  case "sender:send": return `<div class="role warm"><span class="eyebrow">You are a</span><b>Sender</b></div>
+    ${imgTag(es.image)}
+    <p class="muted">Concentrate on this picture and the feeling it gives you. Imagine the receivers seeing it.</p>
+    ${timerBlock(0, T.sendEnd)}${LEAVE_NOTE}`;
+  case "receiver:send": return `<div class="role cool"><span class="eyebrow">You are a</span><b>Receiver</b></div>
+    <div class="rest tune"><div><b>Relax</b><span class="small muted">and try to feel the picture</span></div></div>
+    <p class="muted">Close your eyes if you like. Notice any shapes, colours, feelings or ideas. When the time is up, you'll sketch.</p>
+    ${timerBlock(0, T.sendEnd, "cool")}${LEAVE_NOTE}`;
+  case "sender:sketch": return `<div class="role warm"><span class="eyebrow">Sender</span><b>Thank you</b></div>
+    <div class="rest"><div><b>Rest</b><span class="small muted">keep the picture gently in mind</span></div></div>
+    <p class="muted">The receivers are sketching now.</p>${timerBlock(T.sendEnd, T.sketchEnd)}${LEAVE_NOTE}`;
+  case "receiver:sketch": return `<div class="role cool"><span class="eyebrow">Receiver</span><b>Sketch now</b></div>
+    ${timerBlock(T.sendEnd, T.sketchEnd, "cool")}
+    ${L.draw ? `<canvas id="pad" class="pad" aria-label="Drawing pad"></canvas>
+      <div class="grid2"><button class="btn ghost" data-act="clearpad">Clear</button><button class="btn cool" data-act="senddrawing">Send drawing</button></div>
+      <button class="link" data-act="papermode">Use paper instead</button>`
+    : `<p class="muted">Sketch whatever came to you on your paper: shapes, colours, objects, feelings. Add words if you like. There's no right or wrong.</p>
+      <p class="small muted">At 7:35 you'll take a photo of it here.</p>
+      <button class="link" data-act="drawmode">No paper? Draw on the screen instead</button>`}
+    ${LEAVE_NOTE}`;
+  case "receiver:photo": return `<div class="role cool"><span class="eyebrow">Receiver</span><b>Pens down</b></div>
+    <p class="muted">Take a photo of your sketch now. The picture will be revealed once it's sent.</p>
+    ${L.photo ? `<figure class="target"><img src="${esc(L.photoUrl)}" alt="Your sketch"></figure>
+      <div class="grid2"><button class="btn ghost" data-act="retake">Retake</button><button class="btn cool" data-act="sendphoto">Send sketch</button></div>`
+    : `<button class="btn cool" data-act="camera">Take photo of sketch</button>`}
+    ${timerBlock(T.sketchEnd, T.photoEnd, "cool")}`;
+  case "receiver:sent": return `<div class="role cool"><span class="eyebrow">Receiver</span><b>Sketch sent</b></div>
+    ${L.sketchUrl ? `<figure class="target"><img src="${esc(L.sketchUrl)}" alt="Your sketch"></figure>` : ""}
+    <p class="muted">Thank you. ${t < T.sketchEnd ? "The picture will be shown to you at 7:35." : "Here's the picture."}</p>
+    ${t >= T.sketchEnd && es.image ? `<p class="eyebrow">The picture was</p>${imgTag(es.image)}` : t < T.sketchEnd ? timerBlock(T.sendEnd, T.sketchEnd, "cool") + LEAVE_NOTE : ""}`;
+  case "sender:wait": return `<div class="role warm"><span class="eyebrow">Sender</span><b>All done</b></div>
+    <p class="muted">Thank you for sending. The receivers are sending their sketches. Everyone sees the picture at 7:37.</p>${timerBlock(T.sketchEnd, T.photoEnd)}`;
+  case "done": {
+    const im = es.reveal || es.image, counted = me.counted;
+    let status = "";
+    if (es.me) {
+      if (me.left_at) status = `<div class="notice">Your part wasn't counted this week because you left the app during the event. See you next Sunday!</div>`;
+      else if (me.role === "receiver" && !me.sketch_at) status = `<div class="notice">Your sketch wasn't received in time, so it isn't counted this week. See you next Sunday!</div>`;
+      else if (counted) status = `<div class="notice" style="border-left-color:var(--ok)">Your ${me.role === "sender" ? "sending" : "sketch"} counted. Thank you for taking part.</div>`;
+    }
+    const sc = es.scores;
+    return top + `<h2>The picture <em>was…</em></h2>${im ? imgTag({ path: im.path, title: im.title }) + `<p class="muted" style="text-align:center">${esc(im.title)}</p>` : `<p class="muted">Revealing…</p>`}
+    ${status}
+    ${me.role === "receiver" && L.sketchUrl ? `<p class="eyebrow">Your sketch</p><figure class="target"><img src="${esc(L.sketchUrl)}" alt="Your sketch"></figure>` : ""}
+    <div class="grid2"><div class="stat"><div class="k">Senders</div><div class="v">${es.n_senders ?? "–"}</div></div><div class="stat"><div class="k">Receivers</div><div class="v">${es.n_receivers ?? "–"}</div></div></div>
+    <div class="panel stack"><p class="eyebrow">Results</p>
+    ${sc && sc.judges ? `<p class="muted">AI score for your sketch against the real picture: <b style="color:var(--moon)">${sc.target}</b> out of 5, against pictures that weren't sent: <b style="color:var(--moon)">${sc.others}</b>.</p>`
+      : `<p class="small muted">The AI judge scores every sketch against the real picture and against pictures that weren't sent. Results for this event will appear here.</p>`}</div>
+    ${es.reveal ? `<div class="seal"><span class="ic">${L.hashOk ? "✓" : "…"}</span><span>${L.hashOk ? "Sealed before the start and checked: the picture wasn't changed after the sketches came in." : "Checking the seal…"}</span></div><p class="hash">${esc(es.commit_hash || "")}</p>` : ""}
+    <button class="btn ghost" data-act="shareevent">Invite friends to next Sunday</button>`;
+  }
+  }
+  return top;
+}
+});
+
+function render() { $app.innerHTML = (V[S.screen] || V.home)(); if (S.screen === "live") { pad = null; padInit(); } }
 async function go(s) {
   S.screen = s;
-  if (s === "home") { try { await loadConns(); } catch (e) { S.conns = []; } }
+  if (s !== "live") stopLive();
+  if (s === "home") { try { await Promise.all([loadConns().catch(() => { S.conns = []; }), loadHome()]); } catch (e) { S.home = null; } }
   render(); window.scrollTo(0, 0);
 }
 
@@ -347,6 +660,28 @@ async function act(name, btn) {
         setBusy(btn, false); if (error) throw error;
         toast(data === "confirmed" ? "Linked" : data); return go("home");
       }
+      case "testevent": {
+        setBusy(btn, true, "Starting…");
+        const { error } = await sb.rpc("create_test_event", { p_minutes: 2 }); setBusy(btn, false); if (error) throw error;
+        toast("Test event starts in about 2 minutes"); return go("home");
+      }
+      case "pledge": S.pledged = !S.pledged; return render();
+      case "checkin": {
+        if (!S.pledged) return showError("Please tick the pledge to take part.");
+        setBusy(btn, true, "Checking in…");
+        const { error } = await sb.rpc("check_in", { p_event: S.home.next.id, p_pledge: true }); setBusy(btn, false);
+        if (error) throw error; return openLive(S.home.next.id);
+      }
+      case "golive": return openLive(btn.dataset.ev);
+      case "calendar": return downloadIcs();
+      case "shareevent": return shareEvent();
+      case "drawmode": L.draw = true; return render();
+      case "papermode": L.draw = false; return render();
+      case "clearpad": return padClear();
+      case "senddrawing": return sendDrawing(btn);
+      case "sendphoto": return sendPhoto(btn);
+      case "retake": L.photo = null; return render();
+      case "camera": photoInput().click(); return;
       case "signout": await sb.auth.signOut(); S.user = null; S.profile = null; return go("welcome");
       case "askdelete": S.delStep = 1; return render();
       case "canceldelete": S.delStep = 0; return render();
