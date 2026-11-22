@@ -169,3 +169,4 @@ figure.target{margin:0;border-radius:18px;overflow:hidden;border:1px solid var(-
 figure.target img{display:block;width:100%;height:auto;max-height:62vh;object-fit:contain;background:#fff}
 .pad{width:100%;aspect-ratio:3/4;max-height:58vh;border-radius:16px;background:#fff;touch-action:none;display:block}
 button.item{font:inherit;cursor:pointer}
+.subhead{color:var(--warm);font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;font-weight:600;margin-top:6px}

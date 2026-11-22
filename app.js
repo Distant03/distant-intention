@@ -1,4 +1,4 @@
-// Distant Intention Study · app (step 3: the Sunday Telepathy Event)
+// Distant Intention Study · app (step 3: the Group Telepathy Event)
 const cfg = window.DI_CONFIG || {};
 const $app = document.getElementById("app");
 
@@ -128,7 +128,8 @@ const V = {
 loading: () => `<div class="spinner" aria-label="Loading"></div>`,
 
 welcome: () => ORBS() + `<div class="stack"><p class="eyebrow">Distant Intention Study</p>
-  <h1>The Sunday <em>Telepathy Event</em></h1>
+  <h1>Group <em>Telepathy Event</em></h1>
+  <p class="subhead">Every Sunday · 7:30pm UK time</p>
   <p class="lede">Every Sunday at 7:30pm (UK time), everyone taking part is split at random into two groups. Senders concentrate on one picture for two minutes. Receivers try to feel it, then sketch what comes to them. Can a group of minds send an image?</p></div>
   ${pendingJoin() ? `<div class="notice">You've been invited to link with someone. Sign up first, and you'll be able to accept.</div>` : ""}
   <button class="btn warm" data-go="email">Get started</button>
@@ -254,7 +255,7 @@ settings: () => back("home") + `<h2>Settings</h2>
 };
 
 // =====================================================================
-// The Sunday Telepathy Event
+// The Group Telepathy Event
 // Timing in seconds after the start: 0–120 send / tune in, 120–300 sketch,
 // 300–420 photograph the sketch, 420 reveal. Leaving the app 0–300 = not counted.
 // =====================================================================
@@ -281,9 +282,9 @@ function fmtLeft(ms) {
 const clock = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
 
 function eventCard() {
-  const H = S.home; if (!H || !H.next) return `<h2>The Sunday <em>Telepathy Event</em></h2>`;
+  const H = S.home; if (!H || !H.next) return `<h2>Group <em>Telepathy Event</em></h2><p class="subhead">Every Sunday · 7:30pm UK time</p>`;
   const n = H.next, start = new Date(n.starts_at).getTime(), t = (nowMs() - start) / 1000;
-  const title = n.kind === "test" ? "Test <em>event</em>" : "Sunday <em>Telepathy Event</em>";
+  const title = n.kind === "test" ? "Test <em>event</em>" : "Group <em>Telepathy Event</em>";
   let body;
   if (n.checked_in && t < T.photoEnd) body = `<p class="muted">You're checked in. Keep the app open.</p><button class="btn warm" data-act="golive" data-ev="${esc(n.id)}">Go to the event</button>`;
   else if (t >= T.lobby && t < 0) body = `<div class="cd"><span class="k">Starts in</span><span class="v mono" data-cd="${start}">${fmtLeft(start - nowMs())}</span></div>
@@ -293,8 +294,7 @@ function eventCard() {
     <p class="small muted">The lobby opens 15 minutes before, at ${fmtTime(new Date(start - 900000).toISOString())}. You'll need about 10 minutes, a quiet place, and a blank sheet of paper and a pen.</p>
     <div class="grid2"><button class="btn ghost" data-act="calendar">Add to calendar</button><button class="btn ghost" data-act="shareevent">Invite friends</button></div>`;
   const last = H.last ? `<button class="item" style="width:100%;text-align:left;color:inherit" data-act="golive" data-ev="${esc(H.last.id)}"><span class="dot" style="background:var(--cool)"></span><span class="meta"><b>Your last event</b><div>${esc(fmtWhen(H.last.starts_at))}</div></span><span class="pill ok">Results</span></button>` : "";
-  return `<div class="panel stack event-card"><p class="eyebrow" style="color:var(--warm)">${n.kind === "test" ? "Test" : "Every Sunday · 7:30pm UK"}</p>
-    <h2>${title}</h2><p class="small muted">${esc(fmtWhen(n.starts_at))}</p>${body}</div>${last}`;
+  return `<div class="panel stack event-card"><div><h2>${title}</h2><p class="subhead">${n.kind === "test" ? "Test run" : "Every Sunday · 7:30pm UK time"}</p></div><p class="small muted">Next: ${esc(fmtWhen(n.starts_at))}</p>${body}</div>${last}`;
 }
 
 function downloadIcs() {
@@ -310,17 +310,17 @@ function downloadIcs() {
     "END:VTIMEZONE",
     "BEGIN:VEVENT", "UID:sunday-telepathy-event@distant-intention", `DTSTAMP:${z(new Date())}`,
     `DTSTART;TZID=Europe/London:${local}T193000`, `DTEND;TZID=Europe/London:${local}T194000`, "RRULE:FREQ=WEEKLY;BYDAY=SU",
-    "SUMMARY:Sunday Telepathy Event", `DESCRIPTION:Open the app by 7:30pm. Have a blank sheet of paper and a pen ready. ${location.origin + location.pathname}`,
+    "SUMMARY:Group Telepathy Event", `DESCRIPTION:Open the app by 7:30pm. Have a blank sheet of paper and a pen ready. ${location.origin + location.pathname}`,
     `URL:${location.origin + location.pathname}`,
-    "BEGIN:VALARM", "TRIGGER:-PT15M", "ACTION:DISPLAY", "DESCRIPTION:The Telepathy Event lobby is open", "END:VALARM",
+    "BEGIN:VALARM", "TRIGGER:-PT15M", "ACTION:DISPLAY", "DESCRIPTION:The Group Telepathy Event lobby is open", "END:VALARM",
     "END:VEVENT", "END:VCALENDAR"].join("\r\n");
   void end;
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
   a.download = "sunday-telepathy-event.ics"; document.body.appendChild(a); a.click(); a.remove();
 }
 async function shareEvent() {
-  const url = location.origin + location.pathname, text = "Join me for the Sunday Telepathy Event: every Sunday at 7:30pm UK time, a live experiment in sending and receiving an image. Free to take part:";
-  if (navigator.share) { try { await navigator.share({ title: "Sunday Telepathy Event", text, url }); } catch (_) {} return; }
+  const url = location.origin + location.pathname, text = "Join me for the Group Telepathy Event: every Sunday at 7:30pm UK time, a live experiment in sending and receiving an image. Free to take part:";
+  if (navigator.share) { try { await navigator.share({ title: "Group Telepathy Event", text, url }); } catch (_) {} return; }
   try { await navigator.clipboard.writeText(text + " " + url); toast("Link copied"); } catch (_) { toast(url); }
 }
 
@@ -503,7 +503,7 @@ pledge: () => back("home") + `<p class="eyebrow">Before you join</p><h2>Ready to
 live: () => {
   const es = L.es, ph = livePhase(); if (!es) return `<div class="spinner" aria-label="Loading"></div>`;
   const start = new Date(es.starts_at).getTime(), t = (nowMs() - start) / 1000, me = es.me || {};
-  const top = `<div class="bar"><button class="link" data-go="home">← Home</button><span class="eyebrow">${es.kind === "test" ? "Test event" : "Sunday Telepathy Event"}</span></div>`;
+  const top = `<div class="bar"><button class="link" data-go="home">← Home</button><span class="eyebrow">${es.kind === "test" ? "Test event" : "Group Telepathy Event"}</span></div>`;
   switch (ph) {
   case "notin": return top + `<h2>This event has <em>started</em></h2><p class="muted">Check-in closed at ${fmtTime(es.starts_at)}. See you next Sunday!</p>`;
   case "lobby": return top + `<div class="rest"><div><span class="small muted">Starting in</span><b class="mono" data-until="0">${clock(-t)}</b></div></div>
